@@ -56,12 +56,12 @@ def clean_str(val):
     return s
 
 
-def gerar_descricao_curta_html(titulo_completo, marca="Chevrolet"):
+def gerar_descricao_curta_html(titulo_completo, marca=""):
     """
-    Gera o HTML da Descrição Curta estritamente em LINHA ÚNICA sem \\n ou \\r
-    para evitar corrupção e deslocamento de colunas no parser CSV do Bling.
+    Gera o HTML da Descrição Curta estritamente em LINHA ÚNICA sem \\n ou \\r.
+    Se marca não foi informada no Trello, omite a marca.
     """
-    marca_str = f"Original {marca}." if marca else "Original."
+    marca_str = f"<p>Original {marca}.</p>" if marca else "<p>Original.</p>"
     html = (
         f"<p><strong>ATENÇÃO</strong></p>"
         f"<p>&nbsp;</p>"
@@ -70,7 +70,7 @@ def gerar_descricao_curta_html(titulo_completo, marca="Chevrolet"):
         f"<p>Utilize o campo de perguntas para esclarecer suas dúvidas.</p>"
         f"<p>&nbsp;</p>"
         f"<p>{titulo_completo}</p>"
-        f"<p>{marca_str}</p>"
+        f"{marca_str}"
         f"<p>&nbsp;</p>"
         f"<p>Verifique se o código do produto é igual ao da peça que está em seu veículo. Não compre somente pela compatibilidade de ano.</p>"
     )
@@ -78,7 +78,7 @@ def gerar_descricao_curta_html(titulo_completo, marca="Chevrolet"):
 
 
 def extract_brand_model_from_text(text):
-    """Infere Marca e Modelo a partir de texto livre do card."""
+    """Infere Marca e Modelo a partir do texto caso estejam citados explicitamente no título/descrição."""
     brands = [
         "CHEVROLET", "VOLKSWAGEN", "VW", "MITSUBISHI", "TOYOTA", "FORD", "FIAT",
         "RENAULT", "NISSAN", "HYUNDAI", "HONDA", "JEEP", "RAM", "AUDI", "BMW", "MERCEDES"
@@ -107,16 +107,14 @@ def extract_brand_model_from_text(text):
 
 def parse_trello_row(row):
     """
-    Consolida os dados do card combinando:
-    1. Colunas explícitas do DataFrame do Trello
-    2. Chave:valor e expressões regulares na Card Description
-    3. Padrões de SKU/OEM no Card Name
+    Extrai EXATAMENTE o que existe no Trello sem inventar fallbacks.
+    Se um dado não foi fornecido, permanece vazio ("").
     """
     data = {}
     c_name = clean_str(row.get("Card Name", ""))
     c_desc = clean_str(row.get("Card Description", ""))
     
-    # 1. Mapeamento de colunas explícitas do CSV exportado do Trello
+    # 1. Colunas explícitas no CSV exportado do Trello
     col_mapping = {
         'codigo_oem': ['código(oem):', 'codigo(oem):', 'código oem:', 'codigo oem:'],
         'codigo': ['código:', 'codigo:', 'sku:'],
@@ -141,7 +139,7 @@ def parse_trello_row(row):
                     data[key] = val
                     break
 
-    # 2. Parse da Card Description (formato linha a linha chave: valor)
+    # 2. Parse da Card Description (linhas chave: valor)
     if c_desc:
         for line in c_desc.split("\n"):
             line_clean = line.replace("`", "").strip()
@@ -181,18 +179,15 @@ def parse_trello_row(row):
     sku = data.get("sku") or data.get("codigo") or ""
     oem = data.get("codigo_oem") or ""
 
-    # Captura padrão "CUSTOM SKU:S01670" ou "SKU: S01670" no Card Name
     match_custom_sku = re.search(r'(?:CUSTOM\s*)?SKU\s*:\s*([A-Za-z0-9_-]+)', c_name, re.IGNORECASE)
     if match_custom_sku:
         sku = match_custom_sku.group(1).strip()
 
-    # Captura código tipo S01664 no Card Name
     if not sku:
         match_s_code = re.search(r'\b(S\d{4,6})\b', c_name, re.IGNORECASE)
         if match_s_code:
             sku = match_s_code.group(1).upper()
 
-    # Captura código OEM no início do Card Name
     if not oem and c_name:
         words = c_name.split()
         if words:
@@ -201,7 +196,7 @@ def parse_trello_row(row):
                 oem = first_word
 
     if not sku:
-        sku = oem if oem else (c_name.split()[0] if c_name.split() else "PROD-000")
+        sku = oem if oem else (c_name.split()[0] if c_name.split() else "")
 
     if not oem:
         oem = sku
@@ -209,7 +204,7 @@ def parse_trello_row(row):
     data["sku_final"] = sku
     data["oem_final"] = oem
 
-    # 4. Resgate Regex de Dimensões (ex: 37x12x18)
+    # 4. Extração Regex de Dimensões SOMENTE se constar na descrição (ex: 37x12x18)
     if not data.get("largura"):
         match_dim = re.search(r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)', c_desc)
         if match_dim:
@@ -217,11 +212,11 @@ def parse_trello_row(row):
             data["altura"] = match_dim.group(2).replace(",", ".")
             data["profundidade"] = match_dim.group(3).replace(",", ".")
         else:
-            data["largura"] = "37"
-            data["altura"] = "12"
-            data["profundidade"] = "18"
+            data["largura"] = ""
+            data["altura"] = ""
+            data["profundidade"] = ""
 
-    # 5. Resgate Regex de Peso (ex: 850g ou 1.5kg)
+    # 5. Extração Regex de Peso SOMENTE se constar na descrição (ex: 850g ou 1kg)
     if not data.get("peso"):
         match_g = re.search(r'(\d+(?:[.,]\d+)?)\s*g\b', c_desc, re.IGNORECASE)
         if match_g:
@@ -232,22 +227,22 @@ def parse_trello_row(row):
             if match_kg:
                 data["peso"] = match_kg.group(1).replace(",", ".")
             else:
-                data["peso"] = "0.850"
+                data["peso"] = ""
 
-    # 6. Resgate Regex de Quantidade (ex: 1 un, 2 UN)
+    # 6. Extração Regex de Quantidade SOMENTE se constar na descrição (ex: 1 un)
     if not data.get("quantidade"):
         match_q = re.search(r'(\d+)\s*(?:un|u|unid|unidade|peças|pecas)\b', c_desc, re.IGNORECASE)
         if match_q:
             data["quantidade"] = match_q.group(1)
         else:
-            data["quantidade"] = "1"
+            data["quantidade"] = ""
 
-    # 7. Inferência de Marca e Modelo
+    # 7. Inferência de Marca e Modelo se citado no texto
     inf_brand, inf_model = extract_brand_model_from_text(c_name + " " + c_desc)
     if not data.get("marca"):
-        data["marca"] = inf_brand or "CHEVROLET"
+        data["marca"] = inf_brand
     if not data.get("modelo"):
-        data["modelo"] = inf_model or ""
+        data["modelo"] = inf_model
 
     return data, c_name
 
@@ -258,8 +253,8 @@ def processar_produto(item_data, card_name_bruto=""):
     nome_peca = str(item_data.get("titulo", "")).strip()
     
     if not nome_peca:
-        clean_name = re.sub(r'^(?:CUSTOM\s*)?SKU\s*:\s*[A-Za-z0-9_-]+', '', card_name_bruto, flags=re.IGNORECASE).strip()
-        nome_peca = clean_name if clean_name else "Peça Automotiva"
+        clean_name = re.sub(r'^(?:CUSTOM\s*)?SKU\s*:\s*[A-Za-z0-9_-]*', '', card_name_bruto, flags=re.IGNORECASE).strip()
+        nome_peca = clean_name if clean_name else card_name_bruto
 
     modelo = str(item_data.get("modelo", "")).strip()
     caracteristicas = str(item_data.get("caracteristicas", "") or item_data.get("compatibilidade", "")).strip()
@@ -278,11 +273,11 @@ def processar_produto(item_data, card_name_bruto=""):
     
     titulo_completo = " ".join(partes) if partes else card_name_bruto
 
-    peso = str(item_data.get("peso", "0.850")).replace(",", ".").strip()
-    largura = str(item_data.get("largura", "37")).replace(",", ".").strip()
-    altura = str(item_data.get("altura", "12")).replace(",", ".").strip()
-    profundidade = str(item_data.get("profundidade", "18")).replace(",", ".").strip()
-    quantidade = str(item_data.get("quantidade", "1")).strip()
+    peso = str(item_data.get("peso", "")).replace(",", ".").strip()
+    largura = str(item_data.get("largura", "")).replace(",", ".").strip()
+    altura = str(item_data.get("altura", "")).replace(",", ".").strip()
+    profundidade = str(item_data.get("profundidade", "")).replace(",", ".").strip()
+    quantidade = str(item_data.get("quantidade", "")).strip()
     categoria = str(item_data.get("categoria", "")).strip()
     observacoes = str(item_data.get("observacoes", "")).strip()
 
@@ -296,11 +291,13 @@ def processar_produto(item_data, card_name_bruto=""):
     tags = f"CADASTRO:1 - CONFERÊNCIA|{tag_mes}"
 
     def fmt_num(v, decimals=2):
+        if not v or pd.isna(v) or str(v).strip() == "":
+            return ""
         try:
-            val = float(v)
+            val = float(str(v).replace(",", "."))
             return f"{val:.{decimals}f}".replace(".", ",")
         except:
-            return v
+            return ""
 
     # 1. Montagem do Produto Base Bling (59 colunas)
     p_base = {col: "" for col in COLUNAS_BLING}
