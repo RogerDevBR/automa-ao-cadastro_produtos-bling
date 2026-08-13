@@ -32,19 +32,18 @@ COLUNAS_BLING = [
 
 def gerar_descricao_curta(titulo_completo, marca="Chevrolet"):
     """Gera a Descrição Curta exatamente no padrão oficial do Bling/Mercado Livre."""
-    # Garante que marca tenha um fallback coerente
     marca_formatada = f"Original {marca}." if marca else "Original."
 
     return f"""<p><strong>ATENÇÃO</strong></p>
-        <p>&nbsp;</p>
-        <p><strong>Compre somente se for o mesmo código da peça</strong></p>
-        <p>&nbsp;</p>
-        <p>Utilize o campo de perguntas para esclarecer suas dúvidas.</p>
-        <p>&nbsp;</p>
-        <p>{titulo_completo}</p>
-        <p>{marca_formatada}</p>
-        <p>&nbsp;</p>
-        <p>Verifique se o código do produto é igual ao da peça que está em seu veículo. Não compre somente pela compatibilidade de ano.</p>"""
+<p>&nbsp;</p>
+<p><strong>Compre somente se for o mesmo código da peça</strong></p>
+<p>&nbsp;</p>
+<p>Utilize o campo de perguntas para esclarecer suas dúvidas.</p>
+<p>&nbsp;</p>
+<p>{titulo_completo}</p>
+<p>{marca_formatada}</p>
+<p>&nbsp;</p>
+<p>Verifique se o código do produto é igual ao da peça que está em seu veículo. Não compre somente pela compatibilidade de ano.</p>"""
 
 def parse_description_text(text):
     """Extrai chave: valor caso seja usado texto estruturado na descrição."""
@@ -81,23 +80,16 @@ def processar_dados_item(item):
     altura = str(item.get("altura", "20")).replace(",", ".").strip()
     profundidade = str(item.get("profundidade", "20")).replace(",", ".").strip()
     quantidade = str(item.get("quantidade", "1")).strip()
+    
+    # Categoria direta sem regras intermediárias
     categoria = str(item.get("categoria", "")).strip()
+    
     observacoes = str(item.get("observacoes", "")).strip()
 
     # Tag mensal automática (Ex: ROGER:AGOSTO 2026)
     meses = [
-        "JANEIRO",
-        "FEVEREIRO",
-        "MARÇO",
-        "ABRIL",
-        "MAIO",
-        "JUNHO",
-        "JULHO",
-        "AGOSTO",
-        "SETEMBRO",
-        "OUTUBRO",
-        "NOVEMBRO",
-        "DEZEMBRO",
+        "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", 
+        "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"
     ]
     now = datetime.now()
     tag_mes = f"ROGER:{meses[now.month - 1]} {now.year}"
@@ -123,9 +115,7 @@ def processar_dados_item(item):
     prod_base["Grupo de Tags/Tags"] = tags
     prod_base["Marca"] = marca
     prod_base["CEST"] = "01.075.00"
-    prod_base["Descrição Curta"] = gerar_descricao_curta(
-        titulo_completo, marca
-    )
+    prod_base["Descrição Curta"] = gerar_descricao_curta(titulo_completo, marca)
     prod_base["Condição do Produto"] = "NOVO"
     prod_base["Frete Grátis"] = "NÃO"
     prod_base["Categoria do produto"] = categoria
@@ -162,7 +152,6 @@ if opcao_origem == "Upload CSV do Trello":
         df_trello = pd.read_csv(uploaded_file)
         st.success(f"Arquivo carregado com sucesso! Encontrados {len(df_trello)} cards.")
         
-        # Filtrar apenas a lista desejada (opcional)
         listas = df_trello['List Name'].unique() if 'List Name' in df_trello.columns else []
         lista_sel = st.selectbox("Selecione a Lista/Coluna a exportar:", listas) if len(listas) > 0 else None
         
@@ -177,7 +166,9 @@ elif opcao_origem == "Simulação / Teste Rápido":
     st.info("Modo de Teste: Processando 1 item de demonstração com os dados do template.")
     item_teste = {
         "codigo": "S01664",
-        "titulo": "Painel Instrumentos S10 LTZ Automática 2021 2023",
+        "titulo": "Painel Instrumento",
+        "modelo": "S10 Lt",
+        "caracteristicas": "Automática Ltz 2021 2023",
         "categoria": "Acessórios para Veículos>>Aces. de Carros e Caminhonetes>>Interior>>Instrumental>>Relógios>>Velocímetros e Conta-giros",
         "peso": "0.95",
         "largura": "36",
@@ -185,7 +176,6 @@ elif opcao_origem == "Simulação / Teste Rápido":
         "profundidade": "22",
         "quantidade": "1",
         "marca": "CHEVROLET",
-        "modelo": "S10",
         "observacoes": "Peça testada e higienizada"
     }
     itens_para_processar.append(item_teste)
